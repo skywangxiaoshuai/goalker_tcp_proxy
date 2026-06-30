@@ -117,6 +117,100 @@ uint64_t clock_ns(clockid_t clock_id) {
   return static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + ts.tv_nsec;
 }
 
+double ns_to_ms(uint64_t ns) {
+  return static_cast<double>(ns) / 1000000.0;
+}
+
+struct ForwardStats {
+  uint64_t frames = 0;
+  uint64_t bytes = 0;
+  uint64_t window_start_ns = 0;
+  uint64_t read_ns = 0;
+  uint64_t stamp_crc_ns = 0;
+  uint64_t write_ns = 0;
+  uint64_t record_ns = 0;
+  uint64_t active_ns = 0;
+  uint64_t total_ns = 0;
+  uint64_t max_active_ns = 0;
+  uint64_t max_total_ns = 0;
+  uint32_t last_raw_type = 0;
+  uint32_t last_raw_frame_size = 0;
+
+  void reset(uint64_t now_ns) {
+    frames = 0;
+    bytes = 0;
+    window_start_ns = now_ns;
+    read_ns = 0;
+    stamp_crc_ns = 0;
+    write_ns = 0;
+    record_ns = 0;
+    active_ns = 0;
+    total_ns = 0;
+    max_active_ns = 0;
+    max_total_ns = 0;
+    last_raw_type = 0;
+    last_raw_frame_size = 0;
+  }
+
+  void add(uint64_t read_duration_ns,
+           uint64_t stamp_crc_duration_ns,
+           uint64_t write_duration_ns,
+           uint64_t record_duration_ns,
+           uint64_t active_duration_ns,
+           uint64_t total_duration_ns,
+           uint64_t frame_bytes,
+           uint32_t raw_type,
+           uint32_t raw_frame_size) {
+    ++frames;
+    bytes += frame_bytes;
+    read_ns += read_duration_ns;
+    stamp_crc_ns += stamp_crc_duration_ns;
+    write_ns += write_duration_ns;
+    record_ns += record_duration_ns;
+    active_ns += active_duration_ns;
+    total_ns += total_duration_ns;
+    if (active_duration_ns > max_active_ns) {
+      max_active_ns = active_duration_ns;
+    }
+    if (total_duration_ns > max_total_ns) {
+      max_total_ns = total_duration_ns;
+    }
+    last_raw_type = raw_type;
+    last_raw_frame_size = raw_frame_size;
+  }
+
+  void print(uint64_t now_ns, uint64_t total_frame_count) const {
+    if (frames == 0) {
+      return;
+    }
+
+    const double elapsed_s =
+        static_cast<double>(now_ns - window_start_ns) / 1000000000.0;
+    const double fps = elapsed_s > 0.0 ? static_cast<double>(frames) / elapsed_s : 0.0;
+    const double mib_s =
+        elapsed_s > 0.0 ? static_cast<double>(bytes) / (1024.0 * 1024.0) / elapsed_s : 0.0;
+    const double frame_divisor = static_cast<double>(frames);
+    printf("Forwarded %llu frames | window=%llu fps=%.2f throughput=%.2f MiB/s "
+           "avg_ms active=%.3f total=%.3f read_wait=%.3f stamp_crc=%.3f write=%.3f record=%.3f "
+           "max_active=%.3f max_total=%.3f last type=0x%04x size=%u\n",
+           static_cast<unsigned long long>(total_frame_count),
+           static_cast<unsigned long long>(frames),
+           fps,
+           mib_s,
+           ns_to_ms(active_ns) / frame_divisor,
+           ns_to_ms(total_ns) / frame_divisor,
+           ns_to_ms(read_ns) / frame_divisor,
+           ns_to_ms(stamp_crc_ns) / frame_divisor,
+           ns_to_ms(write_ns) / frame_divisor,
+           ns_to_ms(record_ns) / frame_divisor,
+           ns_to_ms(max_active_ns),
+           ns_to_ms(max_total_ns),
+           static_cast<unsigned int>(last_raw_type),
+           static_cast<unsigned int>(last_raw_frame_size));
+    fflush(stdout);
+  }
+};
+
 bool read_exact(int fd, void *buffer, size_t size) {
   uint8_t *cursor = static_cast<uint8_t *>(buffer);
   size_t remaining = size;
@@ -304,12 +398,16 @@ int main(int argc, char **argv) {
 
   uint64_t sequence_id = 0;
   uint64_t frame_count = 0;
+  ForwardStats stats;
+  stats.reset(clock_ns(CLOCK_MONOTONIC_RAW));
   std::vector<uint8_t> raw_frame;
   while (g_running.load()) {
+    const uint64_t frame_start_ns = clock_ns(CLOCK_MONOTONIC_RAW);
     if (!read_raw_frame(upstream_fd, options.max_raw_frame_size, &raw_frame)) {
       fprintf(stderr, "Failed to read original raw frame\n");
       break;
     }
+    const uint64_t read_done_ns = clock_ns(CLOCK_MONOTONIC_RAW);
 
     const RawFrameHeader *raw_header = reinterpret_cast<const RawFrameHeader *>(raw_frame.data());
     StampedFrameHeader stamped;
@@ -323,6 +421,7 @@ int main(int argc, char **argv) {
     stamped.raw_frame_size = static_cast<uint32_t>(raw_frame.size());
     stamped.raw_type = ntohs(raw_header->type);
     stamped.crc32 = crc32_ieee(raw_frame.data(), static_cast<uint32_t>(raw_frame.size()));
+    const uint64_t stamp_crc_done_ns = clock_ns(CLOCK_MONOTONIC_RAW);
 
     const StampedFrameHeader network_stamped = to_network_order(stamped);
     if (!write_exact(downstream_fd, &network_stamped, sizeof(network_stamped)) ||
@@ -330,6 +429,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "Failed to write stamped frame to downstream client\n");
       break;
     }
+    const uint64_t write_done_ns = clock_ns(CLOCK_MONOTONIC_RAW);
 
     if (record_file.is_open()) {
       record_file.write(reinterpret_cast<const char *>(&network_stamped), sizeof(network_stamped));
@@ -339,14 +439,22 @@ int main(int argc, char **argv) {
         break;
       }
     }
+    const uint64_t record_done_ns = clock_ns(CLOCK_MONOTONIC_RAW);
 
     ++frame_count;
+    stats.add(read_done_ns - frame_start_ns,
+              stamp_crc_done_ns - read_done_ns,
+              write_done_ns - stamp_crc_done_ns,
+              record_done_ns - write_done_ns,
+              record_done_ns - read_done_ns,
+              record_done_ns - frame_start_ns,
+              sizeof(network_stamped) + raw_frame.size(),
+              stamped.raw_type,
+              stamped.raw_frame_size);
     if (frame_count % 100 == 0) {
-      printf("Forwarded %llu frames, last type=0x%04x size=%u\n",
-             static_cast<unsigned long long>(frame_count),
-             static_cast<unsigned int>(stamped.raw_type),
-             static_cast<unsigned int>(stamped.raw_frame_size));
-      fflush(stdout);
+      const uint64_t now_ns = clock_ns(CLOCK_MONOTONIC_RAW);
+      stats.print(now_ns, frame_count);
+      stats.reset(now_ns);
     }
   }
 
