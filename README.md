@@ -14,6 +14,24 @@ chmod +x build.sh
 ./build.sh
 ```
 
+Cross-build for the aarch64 robot from Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y g++-aarch64-linux-gnu
+
+cd tools/steppe_sim/tcp_timestamp_proxy
+chmod +x build_aarch64.sh
+./build_aarch64.sh
+```
+
+The aarch64 binaries are written to:
+
+```text
+build/aarch64/tcp_timestamp_proxy
+build/aarch64/stamped_frame_dump
+```
+
 ## Run on the robot
 
 Default original stream:
