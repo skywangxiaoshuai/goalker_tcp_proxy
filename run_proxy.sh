@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 
-set -euo pipefail
+set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROXY_BIN="$SCRIPT_DIR/build/tcp_timestamp_proxy"
 
 SOURCE_HOST="${SOURCE_HOST:-127.0.0.1}"
