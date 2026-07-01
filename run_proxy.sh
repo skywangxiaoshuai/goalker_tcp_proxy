@@ -3,15 +3,21 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROXY_BIN="$SCRIPT_DIR/build/tcp_timestamp_proxy"
+PROXY_BIN="$SCRIPT_DIR/tcp_timestamp_proxy"
+
+if [ ! -x "$PROXY_BIN" ]; then
+  PROXY_BIN="$SCRIPT_DIR/build/tcp_timestamp_proxy"
+fi
 
 SOURCE_HOST="${SOURCE_HOST:-127.0.0.1}"
 SOURCE_PORT="${SOURCE_PORT:-9002}"
 LISTEN_PORT="${LISTEN_PORT:-9102}"
 
 if [ ! -x "$PROXY_BIN" ]; then
-  echo "Proxy binary not found: $PROXY_BIN"
-  echo "Run ./build.sh first."
+  echo "Proxy binary not found."
+  echo "Expected one of:"
+  echo "  $SCRIPT_DIR/tcp_timestamp_proxy"
+  echo "  $SCRIPT_DIR/build/tcp_timestamp_proxy"
   exit 1
 fi
 

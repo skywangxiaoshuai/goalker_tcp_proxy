@@ -53,6 +53,18 @@ chmod +x run_proxy.sh
 ./run_proxy.sh
 ```
 
+On the robot, `run_proxy.sh` first looks for:
+
+```text
+./tcp_timestamp_proxy
+```
+
+Then it falls back to:
+
+```text
+./build/tcp_timestamp_proxy
+```
+
 The script defaults to:
 
 ```text
