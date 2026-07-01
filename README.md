@@ -14,7 +14,7 @@ chmod +x build.sh
 ./build.sh
 ```
 
-Cross-build for the aarch64 robot from Ubuntu:
+Cross-build a static aarch64 binary for the robot from Ubuntu:
 
 ```bash
 sudo apt update
@@ -28,9 +28,11 @@ chmod +x build_aarch64.sh
 The aarch64 binaries are written to:
 
 ```text
-build/aarch64/tcp_timestamp_proxy
-build/aarch64/stamped_frame_dump
+build/aarch64-static/tcp_timestamp_proxy
+build/aarch64-static/stamped_frame_dump
 ```
+
+The static build avoids depending on the robot's glibc version.
 
 ## Run on the robot
 

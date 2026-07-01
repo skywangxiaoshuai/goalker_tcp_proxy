@@ -3,7 +3,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$SCRIPT_DIR/build/aarch64"
+BUILD_DIR="$SCRIPT_DIR/build/aarch64-static"
 CXX="${CXX:-aarch64-linux-gnu-g++}"
 READELF="${READELF:-aarch64-linux-gnu-readelf}"
 
@@ -17,7 +17,7 @@ fi
 
 mkdir -p "$BUILD_DIR"
 
-COMMON_FLAGS="-std=c++17 -O2 -Wall -Wextra -static-libstdc++ -static-libgcc"
+COMMON_FLAGS="-std=c++17 -O2 -Wall -Wextra -static"
 
 "$CXX" $COMMON_FLAGS -pthread \
   "$SCRIPT_DIR/tcp_timestamp_proxy.cpp" \
@@ -36,6 +36,9 @@ if command -v file >/dev/null 2>&1; then
 fi
 
 if command -v "$READELF" >/dev/null 2>&1; then
-  "$READELF" -l "$BUILD_DIR/tcp_timestamp_proxy" | grep 'Requesting program interpreter' || true
+  if "$READELF" -l "$BUILD_DIR/tcp_timestamp_proxy" | grep 'Requesting program interpreter'; then
+    echo "Unexpected dynamic interpreter found. Static build failed."
+    exit 1
+  fi
+  echo "Static build check passed: no dynamic interpreter."
 fi
-
